@@ -4,10 +4,8 @@
  *
  * File: $RCSfile: cpdf_adapter.cls.php,v $
  * Created on: 2004-08-04
- * Modified on: 2008-01-05
  *
  * Copyright (c) 2004 - Benj Carson <benjcarson@digitaljunkies.ca>
- * Portions copyright (c) 2008 - Orion Richardson <orionr@yahoo.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -35,7 +33,6 @@
  * @link http://www.digitaljunkies.ca/dompdf
  * @copyright 2004 Benj Carson
  * @author Benj Carson <benjcarson@digitaljunkies.ca>
- * @contributor Orion Richardson <orionr@yahoo.com>
  * @package dompdf
  * @version 0.5.1
  *
@@ -47,7 +44,7 @@
  *   to safe CPU time and memory
  */
 
-/* $Id: cpdf_adapter.cls.php,v 1.22 2009-04-29 04:11:35 benjcarson Exp $ */
+/* $Id: cpdf_adapter.cls.php,v 1.16 2006-07-07 21:31:03 benjcarson Exp $ */
 
 // FIXME: Need to sanity check inputs to this class
 require_once(DOMPDF_LIB_DIR . "/class.pdf.php");
@@ -209,8 +206,8 @@ class CPDF_Adapter implements Canvas {
       $size[2] = $a;
     }
     
-    $this->_pdf = new Cpdf($size, DOMPDF_UNICODE_ENABLED);
-    $this->_pdf->addInfo("Creator", "dompdf");
+    $this->_pdf = new Cpdf($size);
+    $this->_pdf->addInfo("Creator", "DOMPDF Converter");
 
     // Silence pedantic warnings about missing TZ settings
     if ( function_exists("date_default_timezone_get") ) {
@@ -255,16 +252,6 @@ class CPDF_Adapter implements Canvas {
    * @return Cpdf
    */
   function get_cpdf() { return $this->_pdf; }
-
-  /**
-   * Add meta information to the PDF
-   *
-   * @param string $label  label of the value (Creator, Producter, etc.)
-   * @param string $value  the text to set
-   */
-  function add_info($label, $value) {
-    $this->_pdf->addInfo($label, $value);
-  }
 
   /**
    * Opens a new 'object'
@@ -499,9 +486,11 @@ class CPDF_Adapter implements Canvas {
    * @return string The url of the newly converted image 
    */
   protected function _convert_gif_to_png($image_url) {
+    global $_dompdf_warnings;
     
     if ( !function_exists("imagecreatefromgif") ) {
-      throw new DOMPDF_Exception("Function imagecreatefromgif() not found.  Cannot convert gif image: $image_url.  Please install the image PHP extension.");
+      $_dompdf_warnings[] = "Function imagecreatefromgif() not found.  Cannot convert gif image: $image_url.";      
+      return DOMPDF_LIB_DIR . "/res/broken_image.png";
     }
 
     $old_err = set_error_handler("record_warnings");
@@ -583,7 +572,8 @@ class CPDF_Adapter implements Canvas {
     if ( !$fill && isset($width) )
       $this->_set_line_style($width, "round", "round", $style);
 
-    $this->_pdf->ellipse($x, $this->y($y), $r1, 0, 0, 8, 0, 360, 1, $fill);
+    $this->_pdf->filledEllipse($x, $this->y($y), $r1, 0, 0, 8, 0, 360, 1, $fill);
+
   }
   
   //........................................................................
@@ -663,7 +653,8 @@ class CPDF_Adapter implements Canvas {
     $font .= ".afm";
     
     $this->_pdf->selectFont($font);
-    $this->_pdf->addText($x, $this->y($y) - Font_Metrics::get_font_height($font, $size), $size, $text, $angle, $adjust);
+    $this->_pdf->addText($x, $this->y($y) - Font_Metrics::get_font_height($font, $size), $size, utf8_decode($text), $angle, $adjust);
+
   }
 
   //........................................................................
@@ -708,11 +699,7 @@ class CPDF_Adapter implements Canvas {
 
   function get_text_width($text, $font, $size, $spacing = 0) {
     $this->_pdf->selectFont($font);
-    $ascii = utf8_decode($text);
-//     // Hack for &nbsp;
-//     $ascii = str_replace("\xA0", " ", $ascii);
-
-    return $this->_pdf->getTextWidth($size, $ascii, $spacing);
+    return $this->_pdf->getTextWidth($size, utf8_decode($text), $spacing);
   }
 
   //........................................................................
@@ -722,8 +709,6 @@ class CPDF_Adapter implements Canvas {
     return $this->_pdf->getFontHeight($size);
   }
 
-  //........................................................................
-  
   /**
    * Writes text at the specified x and y coordinates on every page
    *
@@ -742,27 +727,9 @@ class CPDF_Adapter implements Canvas {
    * @param float $angle angle to write the text at, measured CW starting from the x-axis
    */
   function page_text($x, $y, $text, $font, $size, $color = array(0,0,0),
-                     $adjust = 0, $angle = 0) {
-    $_t = "text";
-    $this->_page_text[] = compact("_t", "x", "y", "text", "font", "size", "color", "adjust", "angle");
-  }
-
-  //........................................................................
+                     $adjust = 0, $angle = 0,  $blend = "Normal", $opacity = 1.0) {
     
-  /**
-   * Processes a script on every page
-   * 
-   * The variables $pdf, $PAGE_NUM, and $PAGE_COUNT are available.
-   * 
-   * This function can be used to add page numbers to all pages
-   * after the first one, for example.
-   *
-   * @param string $code the script code
-   * @param string $type the language type for script
-   */
-  function page_script($code, $type = "text/php") {
-    $_t = "script";
-    $this->_page_text[] = compact("_t", "code", "type");
+    $this->_page_text[] = compact("x", "y", "text", "font", "size", "color", "adjust", "angle");
   }
   
   //........................................................................
@@ -786,33 +753,22 @@ class CPDF_Adapter implements Canvas {
       return;
 
     $page_number = 1;
-    $eval = null;
 
     foreach ($this->_pages as $pid) {
-      $this->reopen_object($pid);
 
       foreach ($this->_page_text as $pt) {
         extract($pt);
 
-        switch ($_t) {
-            
-        case "text":
         $text = str_replace(array("{PAGE_NUM}","{PAGE_COUNT}"),
                             array($page_number, $this->_page_count), $text);
+
+        $this->reopen_object($pid);
         $this->text($x, $y, $text, $font, $size, $color, $adjust, $angle);
-          break;
-          
-        case "script":
-          if (!$eval) {
-            $eval = new PHP_Evaluator($this);  
-          }
-          $eval->evaluate($code, array('PAGE_NUM' => $page_number, 'PAGE_COUNT' => $this->_page_count));
-          break;
-        }
+        $this->close_object();
       }
 
-      $this->close_object();
       $page_number++;
+      
     }
   }
   
