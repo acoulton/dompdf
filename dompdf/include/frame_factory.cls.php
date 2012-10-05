@@ -43,10 +43,18 @@ class Frame_Factory {
    * FIXME: this is admittedly a little smelly...
    */ 
   static function decorate_frame(Frame $frame, DOMPDF $dompdf, Frame $root = null) {
-    if ( is_null($dompdf) )
-      throw new Exception("foo");
-      
+    if ( is_null($dompdf) ) {
+      throw new DOMPDF_Exception("The DOMPDF argument is required");
+    }
+    
     $style = $frame->get_style();
+    
+    // Floating (and more generally out-of-flow) elements are blocks 
+    // http://coding.smashingmagazine.com/2007/05/01/css-float-theory-things-you-should-know/
+    if ( !$frame->is_in_flow() && in_array($style->display, Style::$INLINE_TYPES)) {
+      $style->display = "block";
+    }
+      
     $display = $style->display;
     
     switch ($display) {
@@ -120,15 +128,19 @@ class Frame_Factory {
       break;
 
     case "-dompdf-list-bullet":
-      if ( $style->list_style_position === "inside" )
+      if ( $style->list_style_position === "inside" ) {
         $positioner = "Inline";
-      else        
+      }
+      else {        
         $positioner = "List_Bullet";
+      }
 
-      if ( $style->list_style_image !== "none" )
+      if ( $style->list_style_image !== "none" ) {
         $decorator = "List_Bullet_Image";
-      else
+      }
+      else {
         $decorator = "List_Bullet";
+      }
       
       $reflower = "List_Bullet";
       break;
@@ -157,11 +169,12 @@ class Frame_Factory {
     // Handle CSS position
     $position = $style->position;
     
-    if ( $position === "absolute" )
+    if ( $position === "absolute" ) {
       $positioner = "Absolute";
-
-    else if ( $position === "fixed" )
+    }
+    else if ( $position === "fixed" ) {
       $positioner = "Fixed";
+    }
       
     $node = $frame->get_node();
     
