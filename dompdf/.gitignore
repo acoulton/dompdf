@@ -1,7 +1,0 @@
-lib/fonts/*.afm.php
-lib/fonts/*.afm
-lib/fonts/php_*
-lib/fonts/*.ttf
-lib/fonts/*.ufm
-lib/fonts/*.ufm.php
-lib/fonts/log.htm
